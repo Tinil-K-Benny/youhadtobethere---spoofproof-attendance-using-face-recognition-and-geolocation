@@ -3,12 +3,15 @@ import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.api_client import register_student, list_students, delete_student, check_api_health
+from utils.navigation import render_sidebar
 
 st.set_page_config(page_title="Students | FaceCheck", layout="centered", initial_sidebar_state="expanded")
 
 if st.session_state.get("role") != "admin":
     st.error("Access Denied. Please log in as Admin.")
     st.stop()
+
+render_sidebar()
 
 st.markdown(
     """<style>

@@ -28,6 +28,7 @@ def _parse_time(t_str: str) -> dtime:
 @router.post("/mark")
 async def mark_attendance(
     class_id: str = Form(...),
+    roll_no: str = Form(...),
     lat: float = Form(...),
     lng: float = Form(...),
     image: UploadFile = File(...),
@@ -41,6 +42,11 @@ async def mark_attendance(
     if not class_doc:
         raise HTTPException(status_code=404, detail="Class not found.")
 
+    # 1.5 Load the logged-in student
+    student = await db.students.find_one({"roll_no": roll_no})
+    if not student:
+        raise HTTPException(status_code=404, detail="Logged in student not found in database.")
+
     # 2. Encode face from uploaded image
     image_bytes = await image.read()
     embedding = face_service.encode_face(image_bytes)
@@ -53,15 +59,12 @@ async def mark_attendance(
             distance=0.0,
             reason="face_mismatch",
             message="No face detected in the image.",
+            student=student
         )
 
-    # 3. Load all students and run face match
-    all_students = []
-    async for s in db.students.find({}):
-        all_students.append(s)
-
+    # 3. Run face match strictly against the logged-in student
     matched_student, match_score = face_service.match_face(
-        embedding, all_students, threshold=FACE_MATCH_THRESHOLD
+        embedding, [student], threshold=FACE_MATCH_THRESHOLD
     )
 
     if matched_student is None:
@@ -71,7 +74,8 @@ async def mark_attendance(
             lng=lng,
             distance=0.0,
             reason="face_mismatch",
-            message=f"Face not recognized (distance={match_score:.4f}, threshold={FACE_MATCH_THRESHOLD}).",
+            message=f"Face does not match your student profile (distance={match_score:.4f}).",
+            student=student
         )
 
     # 4. Check schedule window
@@ -127,6 +131,31 @@ async def mark_attendance(
             reason="out_of_zone",
             message=f"You are {distance_m:.1f}m from the classroom (allowed: {zone['radius_meters']}m).",
             student=matched_student,
+        )
+
+    # 5.5 Prevent Duplicate Attendance
+    from datetime import timedelta
+    twelve_hours_ago = utc_now - timedelta(hours=12)
+    existing_log = await db.attendance_logs.find_one({
+        "student_id": matched_student["_id"],
+        "class_id": ObjectId(class_id),
+        "status": {"$in": ["present", "late"]},
+        "timestamp": {"$gte": twelve_hours_ago}
+    })
+
+    if existing_log:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": True,
+                "status": "already_marked",
+                "student_name": matched_student["name"],
+                "roll_no": matched_student["roll_no"],
+                "face_match_score": round(match_score, 4),
+                "distance_from_zone_m": distance_m,
+                "rejection_reason": "duplicate",
+                "message": f"Attendance is already marked for {matched_student['name']} today."
+            }
         )
 
     # 6. All checks passed — insert attendance log

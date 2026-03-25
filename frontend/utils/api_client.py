@@ -81,6 +81,7 @@ def delete_class(class_id: str) -> Dict[str, Any]:
 
 def mark_attendance(
     class_id: str,
+    roll_no: str,
     lat: float,
     lng: float,
     image_bytes: bytes,
@@ -88,7 +89,7 @@ def mark_attendance(
 ) -> Dict[str, Any]:
     r = requests.post(
         _url("/api/attendance/mark"),
-        data={"class_id": class_id, "lat": lat, "lng": lng},
+        data={"class_id": class_id, "roll_no": roll_no, "lat": lat, "lng": lng},
         files={"image": (filename, image_bytes, "image/jpeg")},
     )
     return _safe_json(r), r.status_code

@@ -6,12 +6,15 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.api_client import list_classes, get_attendance_summary, get_class_attendance, check_api_health
+from utils.navigation import render_sidebar
 
 st.set_page_config(page_title="Dashboard | FaceCheck", layout="wide", initial_sidebar_state="expanded")
 
 if st.session_state.get("role") != "admin":
     st.error("Access Denied. Please log in as Admin.")
     st.stop()
+
+render_sidebar()
 
 st.markdown(
     """<style>
@@ -37,13 +40,48 @@ if not classes:
     st.warning("No classes found. Add classes via Manage Classes.")
     st.stop()
 
-class_options = {f"{c['subject']} ({c['subject_code']})": c["id"] for c in classes}
-selected_label = st.selectbox("Select Class", list(class_options.keys()))
+col1, col2 = st.columns(2)
+with col1:
+    selected_date = st.date_input("Select Date", value=datetime.today())
+    selected_day = selected_date.strftime("%A")
+
+day_classes = [c for c in classes if c.get("schedule", {}).get("day", "").strip().lower() == selected_day.lower()]
+
+if not day_classes:
+    st.info(f"No classes scheduled for {selected_day}, {selected_date.strftime('%B %d, %Y')}.")
+    st.stop()
+
+class_options = {
+    f"{c['subject']} ({c['subject_code']}) - {c.get('schedule', {}).get('start_time', '')}": c["id"] 
+    for c in day_classes
+}
+
+with col2:
+    selected_label = st.selectbox("Select Class", list(class_options.keys()))
+    
 selected_class_id = class_options[selected_label]
 
-tab1, tab2 = st.tabs(["Summary", "Recent Logs"])
+tab1, tab2, tab3 = st.tabs(["Day Overview", "Class Summary", "Class Logs"])
 
 with tab1:
+    st.subheader(f"Classes for {selected_date.strftime('%B %d, %Y')} ({selected_day})")
+    
+    schedule_data = []
+    for c in day_classes:
+        sched = c.get("schedule", {})
+        schedule_data.append({
+            "Time": f"{sched.get('start_time')} - {sched.get('end_time')}",
+            "Subject": c.get("subject"),
+            "Code": c.get("subject_code"),
+            "Teacher": c.get("teacher")
+        })
+        
+    df_schedule = pd.DataFrame(schedule_data)
+    if not df_schedule.empty:
+        df_schedule = df_schedule.sort_values("Time")
+        st.dataframe(df_schedule, use_container_width=True, hide_index=True)
+
+with tab2:
     try:
         summary_data = get_attendance_summary(selected_class_id)
         summary = summary_data.get("summary", [])
@@ -95,7 +133,7 @@ with tab1:
     except Exception as e:
         st.error(f"Failed to load summary: {e}")
 
-with tab2:
+with tab3:
     try:
         logs_data = get_class_attendance(selected_class_id)
         logs = logs_data.get("logs", [])

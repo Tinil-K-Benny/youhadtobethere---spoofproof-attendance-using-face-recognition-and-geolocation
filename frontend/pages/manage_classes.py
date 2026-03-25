@@ -3,12 +3,15 @@ import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.api_client import list_classes, create_class, update_class, delete_class, check_api_health
+from utils.navigation import render_sidebar
 
 st.set_page_config(page_title="Manage Classes | FaceCheck", layout="wide", initial_sidebar_state="expanded")
 
 if st.session_state.get("role") != "admin":
     st.error("Access Denied. Please log in as Admin.")
     st.stop()
+
+render_sidebar()
 
 st.markdown(
     """<style>
@@ -81,40 +84,56 @@ except Exception:
 if not classes:
     st.info("No classes yet.")
 else:
-    for cls in classes:
-        sched = cls.get("schedule", {})
-        zone = cls.get("location_zone", {})
-        label = f"{cls['subject']} ({cls['subject_code']}) - {cls['teacher']} | {sched.get('day')} {sched.get('start_time')}-{sched.get('end_time')}"
+    # Group classes by day
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for c in classes:
+        day = c.get("schedule", {}).get("day", "Unknown")
+        grouped[day].append(c)
+        
+    for day in DAYS:
+        day_classes = grouped.get(day, [])
+        if not day_classes:
+            continue
+            
+        with st.expander(f"📅 {day} ({len(day_classes)} Classes)", expanded=False):
+            # Sort by start time
+            day_classes = sorted(day_classes, key=lambda x: x.get("schedule", {}).get("start_time", ""))
+            
+            for cls in day_classes:
+                sched = cls.get("schedule", {})
+                zone = cls.get("location_zone", {})
+                
+                st.markdown(f"**{cls['subject']}** - {sched.get('start_time')}-{sched.get('end_time')}")
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**Teacher:** {cls['teacher']} | **Code:** `{cls['subject_code']}`")
+                    st.markdown(f"**Zone:** lat=`{zone.get('lat')}`, lng=`{zone.get('lng')}`, radius=`{zone.get('radius_meters')}m`")
 
-        with st.expander(label):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"**Subject:** {cls['subject']} `{cls['subject_code']}`")
-                st.markdown(f"**Teacher:** {cls['teacher']}")
-                st.markdown(f"**Schedule:** {sched.get('day')} from `{sched.get('start_time')}` to `{sched.get('end_time')}`")
-                st.markdown(f"**Zone:** lat=`{zone.get('lat')}`, lng=`{zone.get('lng')}`, radius=`{zone.get('radius_meters')}m`")
+                with col2:
+                    with st.popover("Edit Zone"):
+                        with st.form(f"update_form_{cls['id']}"):
+                            st.markdown("**Edit Zone**")
+                            new_lat = st.number_input("Latitude", value=float(zone.get("lat", 0)), format="%.6f", key=f"lat_{cls['id']}")
+                            new_lng = st.number_input("Longitude", value=float(zone.get("lng", 0)), format="%.6f", key=f"lng_{cls['id']}")
+                            new_radius = st.number_input("Radius (m)", value=int(zone.get("radius_meters", 100)), min_value=10, key=f"r_{cls['id']}")
+                            save = st.form_submit_button("Save")
 
-            with col2:
-                with st.form(f"update_form_{cls['id']}"):
-                    st.markdown("**Edit Zone**")
-                    new_lat = st.number_input("Latitude", value=float(zone.get("lat", 0)), format="%.6f", key=f"lat_{cls['id']}")
-                    new_lng = st.number_input("Longitude", value=float(zone.get("lng", 0)), format="%.6f", key=f"lng_{cls['id']}")
-                    new_radius = st.number_input("Radius (m)", value=int(zone.get("radius_meters", 100)), min_value=10, key=f"r_{cls['id']}")
-                    save = st.form_submit_button("Save")
+                        if save:
+                            update_payload = {"location_zone": {"lat": new_lat, "lng": new_lng, "radius_meters": new_radius}}
+                            res, code = update_class(cls["id"], update_payload)
+                            if code == 200:
+                                st.success("Zone updated!")
+                                st.rerun()
+                            else:
+                                st.error("Update failed.")
 
-                if save:
-                    update_payload = {"location_zone": {"lat": new_lat, "lng": new_lng, "radius_meters": new_radius}}
-                    res, code = update_class(cls["id"], update_payload)
-                    if code == 200:
-                        st.success("Zone updated!")
-                        st.rerun()
-                    else:
-                        st.error("Update failed.")
-
-                if st.button("Delete", key=f"delete_{cls['id']}", type="secondary"):
-                    res, code = delete_class(cls["id"])
-                    if code == 200:
-                        st.success("Class deleted.")
-                        st.rerun()
-                    else:
-                        st.error("Delete failed.")
+                    if st.button("Delete", key=f"delete_{cls['id']}", type="secondary"):
+                        res, code = delete_class(cls["id"])
+                        if code == 200:
+                            st.success("Class deleted.")
+                            st.rerun()
+                        else:
+                            st.error("Delete failed.")
+                st.divider()

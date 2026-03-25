@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 
 from utils.api_client import check_api_health, login
+from utils.navigation import render_sidebar
 
 st.set_page_config(
     page_title="FaceCheck | Login",
@@ -60,21 +61,10 @@ if "user" not in st.session_state:
     st.session_state.role = None
 
 if st.session_state.user is not None:
+    render_sidebar()
     st.success(f"Welcome back, {st.session_state.user['name']}!")
     
-    st.markdown("### Navigation Directory")
-    if st.session_state.role == "admin":
-        st.page_link("pages/dashboard.py", label="Dashboard")
-        st.page_link("pages/register_student.py", label="Students")
-        st.page_link("pages/manage_classes.py", label="Manage Classes")
-    elif st.session_state.role == "student":
-        st.page_link("pages/mark_attendance.py", label="Mark Attendance")
-        st.page_link("pages/my_attendance.py", label="My Attendance")
-        
-    if st.button("Logout"):
-        st.session_state.user = None
-        st.session_state.role = None
-        st.rerun()
+    st.markdown("### Please select a page from the sidebar to continue.")
     st.stop()
 
 st.markdown('<div class="login-container">', unsafe_allow_html=True)

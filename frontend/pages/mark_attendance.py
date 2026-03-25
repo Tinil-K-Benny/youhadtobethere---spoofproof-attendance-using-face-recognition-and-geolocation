@@ -4,12 +4,15 @@ from io import BytesIO
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from utils.api_client import list_classes, mark_attendance, check_api_health
+from utils.navigation import render_sidebar
 
 st.set_page_config(page_title="Mark Attendance | FaceCheck", layout="centered", initial_sidebar_state="expanded")
 
 if st.session_state.get("role") != "student":
     st.error("Access Denied. Please log in as a Student.")
     st.stop()
+
+render_sidebar()
 
 st.markdown(
     """<style>
@@ -27,17 +30,38 @@ if not check_api_health():
 
 try:
     classes_data = list_classes()
-    classes = classes_data.get("classes", [])
+    all_classes = classes_data.get("classes", [])
 except Exception as e:
     st.error(f"Failed to load classes: {e}")
     st.stop()
 
+from datetime import datetime
+current_day = datetime.now().strftime("%A")
+classes = [c for c in all_classes if c.get("schedule", {}).get("day", "").strip().lower() == current_day.lower()]
+
 if not classes:
-    st.warning("No classes available today.")
+    st.warning(f"No classes scheduled for today ({current_day}).")
     st.stop()
 
 class_options = {f"{c['subject']} ({c['subject_code']}) - {c['schedule']['start_time']} to {c['schedule']['end_time']}": c["id"] for c in classes}
-selected_label = st.selectbox("Select Class", list(class_options.keys()))
+
+now_time = datetime.now().time()
+active_index = 0
+
+for i, c in enumerate(classes):
+    start_str = c.get("schedule", {}).get("start_time", "00:00")
+    end_str = c.get("schedule", {}).get("end_time", "23:59")
+    try:
+        sh, sm = map(int, start_str.split(":"))
+        eh, em = map(int, end_str.split(":"))
+        from datetime import time as dtime
+        if dtime(sh, sm) <= now_time <= dtime(eh, em):
+            active_index = i
+            break
+    except Exception:
+        pass
+
+selected_label = st.selectbox("Select Class", list(class_options.keys()), index=active_index)
 selected_class_id = class_options[selected_label]
 
 st.subheader("Face Capture")
@@ -76,8 +100,12 @@ if st.button("Submit Attendance", type="primary", use_container_width=True):
     else:
         with st.spinner("Verifying identity and location..."):
             result, status_code = mark_attendance(
-                class_id=selected_class_id, lat=lat, lng=lng,
-                image_bytes=camera_image.getvalue(), filename="snapshot.jpg",
+                class_id=selected_class_id, 
+                roll_no=st.session_state.user["roll_no"],
+                lat=lat, 
+                lng=lng,
+                image_bytes=camera_image.getvalue(), 
+                filename="snapshot.jpg",
             )
 
         success = result.get("success", False)

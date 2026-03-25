@@ -4,13 +4,16 @@ import pandas as pd
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from utils.api_client import get_student_attendance, check_api_health
+from utils.api_client import get_student_attendance, check_api_health, list_classes
+from utils.navigation import render_sidebar
 
 st.set_page_config(page_title="My Attendance | FaceCheck", layout="wide", initial_sidebar_state="expanded")
 
 if st.session_state.get("role") != "student":
     st.error("Access Denied. Please log in as a Student.")
     st.stop()
+
+render_sidebar()
 
 st.markdown(
     """<style>
@@ -48,6 +51,13 @@ try:
         st.divider()
         st.subheader("Detailed Logs")
         
+        # We need subject names instead of class IDs, so we fetch classes
+        try:
+            cdata = list_classes()
+            classes = {c["id"]: c["subject"] for c in cdata.get("classes", [])}
+        except Exception:
+            classes = {}
+            
         log_rows = []
         for log in logs:
             ts = log.get("timestamp", "")
@@ -56,13 +66,13 @@ try:
             except Exception:
                 ts_fmt = ts
 
+            subject_name = classes.get(log.get("class_id"), log.get("class_id"))
+
             log_rows.append({
-                "Class": log.get("class_id", "N/A"),
+                "Subject Name": subject_name,
                 "Timestamp": ts_fmt,
-                "Status": log.get("status", "").upper(),
-                "Face Match": f"{log.get('face_match_score', 0):.4f}",
-                "Dist (m)": log.get("distance_from_zone_m", 0),
-                "Reason": log.get("rejection_reason") or "-",
+                "Status": log.get("status", "").title(),
+                "Reason": (log.get("rejection_reason") or "").replace("_", " ").title(),
             })
 
         st.dataframe(pd.DataFrame(log_rows), use_container_width=True, hide_index=True)
