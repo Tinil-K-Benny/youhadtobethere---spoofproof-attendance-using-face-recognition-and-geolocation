@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+motor
+pymongo
+python-dotenv
+face-recognition
+opencv-python
+numpy
+streamlit
+streamlit-js-eval
+requests
+pillow
+python-multipart
+plotly
+pandas
+bcrypt
